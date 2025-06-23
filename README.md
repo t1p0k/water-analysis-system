@@ -27,10 +27,10 @@ https://github.com/t1p0k/water-analysis-system/blob/main/111-reworkd.gif?raw=tru
 
 ### 📊 Прогнозирование изменений на 2025 год
 <div align="center">
-  <img src="gif/water_analysis_demo2.gif" alt="Прогнозирование изменений" width="100%">
+  <img src="https://github.com/t1p0k/water-analysis-system/blob/main/222-fast.gif?raw=true" alt="Прогнозирование изменений" width="100%">
   <p><em>Сегментация воды (UNet) и прогноз изменений (ConvLSTM)</em></p>
 </div>
-https://github.com/t1p0k/water-analysis-system/blob/main/222-fast.gif?raw=true
+
 
 ## 💻 Установка
 
