@@ -51,7 +51,8 @@ git clone https://github.com/t1p0k/water-analysis-system.git
 cd water-analysis-system
 
 # 2. Проверьте структуру проекта
-ls -la
+ls
+cat docker-compose.yml
 
 # 3. Запустите систему
 docker-compose up -d
