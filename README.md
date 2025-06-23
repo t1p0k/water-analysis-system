@@ -20,7 +20,7 @@
 
 ### 🌍 Анализ водных поверхностей - Salton Sea
 <div align="center">
-  <img src="gif/water_analysis_demo1.gif" alt="Анализ водных поверхностей" width="100%">
+  <img src="https://github.com/t1p0k/water-analysis-system/blob/main/111-reworkd.gif?raw=true" alt="Анализ водных поверхностей" width="100%">
   <p><em>Визуализация изменений водной поверхности с использованием спутниковых данных</em></p>
 </div> 
 https://github.com/t1p0k/water-analysis-system/blob/main/111-reworkd.gif?raw=true
