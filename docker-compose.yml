@@ -1,0 +1,187 @@
+version: '3.8'
+
+x-spark-common: &spark-common
+  build:
+    context: .
+    dockerfile: Dockerfile.spark-gpu
+  environment: &spark-env
+    SPARK_HOME: /opt/spark
+    PYSPARK_PYTHON: python3.9
+    PYSPARK_DRIVER_PYTHON: python3.9
+    PYTHONPATH: /app/src
+  volumes:
+    - ./models:/app/models
+    - ./src:/app/src
+    - ./data:/app/data
+    - ./logs:/app/logs
+    - ./config:/app/config
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            count: 1
+            capabilities: [gpu]
+  networks:
+    - water-analysis-network
+
+services:
+  spark-master:
+    <<: *spark-common
+    container_name: spark-master-gpu
+    hostname: spark-master
+    ports:
+      - "7077:7077"  # Spark master
+      - "8080:8080"  # Spark UI
+      - "4040:4040"  # Spark application UI
+    environment:
+      <<: *spark-env
+      SPARK_MODE: master
+      SPARK_MASTER_HOST: spark-master
+      SPARK_MASTER_PORT: 7077
+      CUDA_VISIBLE_DEVICES: 0
+    command: >
+      bash -c "
+        /opt/spark/sbin/start-master.sh &&
+        tail -f /opt/spark/logs/spark*.out
+      "
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  spark-worker:
+    <<: *spark-common
+    container_name: spark-worker-gpu
+    hostname: spark-worker
+    depends_on:
+      spark-master:
+        condition: service_healthy
+    ports:
+      - "8081:8081"  # Worker UI
+    environment:
+      <<: *spark-env
+      SPARK_MODE: worker
+      SPARK_MASTER: spark://spark-master:7077
+      SPARK_WORKER_CORES: 6
+      SPARK_WORKER_MEMORY: 10G
+      CUDA_VISIBLE_DEVICES: 0
+    command: >
+      bash -c "
+        sleep 10 &&
+        /opt/spark/sbin/start-worker.sh spark://spark-master:7077 &&
+        tail -f /opt/spark/logs/spark*.out
+      "
+
+  redis:
+    image: redis:7-alpine
+    container_name: water-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - water-analysis-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  api:
+    <<: *spark-common
+    container_name: water-api
+    ports:
+      - "8000:8000"
+    depends_on:
+      - spark-master
+      - redis
+    environment:
+      <<: *spark-env
+      SPARK_MASTER_URL: spark://spark-master:7077
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    volumes:
+      - ./src:/app/src
+      - ./models:/app/models
+      - ./data:/app/data
+      - gee-credentials:/root/.config/earthengine
+    command: ["python3.9", "-m", "uvicorn", "src.api.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    profiles: ["api", "full"]
+
+  streamlit:
+    <<: *spark-common
+    container_name: water-streamlit
+    ports:
+      - "8501:8501"
+    depends_on:
+      - api
+    environment:
+      API_URL: http://api:8000
+      STREAMLIT_SERVER_PORT: 8501
+      STREAMLIT_SERVER_ADDRESS: 0.0.0.0
+    command: ["streamlit", "run", "src/ui/app.py"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    profiles: ["ui", "full"]
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: water-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    networks:
+      - water-analysis-network
+    profiles: ["monitoring", "full"]
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: water-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - ./docker/grafana/provisioning:/etc/grafana/provisioning
+      - ./docker/grafana/dashboards:/var/lib/grafana/dashboards
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    networks:
+      - water-analysis-network
+    profiles: ["monitoring", "full"]
+
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: water-node-exporter
+    ports:
+      - "9100:9100"
+    networks:
+      - water-analysis-network
+    profiles: ["monitoring", "full"]
+
+volumes:
+  gee-credentials:
+  redis-data:
+  prometheus-data:
+  grafana-data:
+
+networks:
+  water-analysis-network:
+    driver: bridge
